@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -20,19 +21,25 @@ public class Executor {
 
     public void executeQuery(String query) {
         ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(1);
 
         try {
             Instant start = Instant.now();
 
             for (int i = 0; i < numThreads; i++) {
                 executorService.submit(() -> {
-                    try (Statement stmt = this.conn.createStatement()) {
-                        stmt.executeQuery(query);
-                    } catch (SQLException e) {
+                    try {
+                        latch.await(); // Wait for the latch to be decremented
+                        try (Statement stmt = this.conn.createStatement()) {
+                            stmt.executeQuery(query);
+                        }
+                    } catch (SQLException | InterruptedException e) {
                         System.out.println("Error: " + e.getMessage());
                     }
                 });
             }
+
+            latch.countDown(); // Decrement the latch, allowing all threads to proceed
 
             executorService.shutdown();
             executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
